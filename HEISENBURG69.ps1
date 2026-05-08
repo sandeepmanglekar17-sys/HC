@@ -1,4 +1,4 @@
-Creating Scriptblock text (1 of 1):
+
 # ========================================================
 # HEISENBURG STREAMER - HYPER-STREAM INSTALLATION v6.0
 # ========================================================
