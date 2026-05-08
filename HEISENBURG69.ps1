@@ -1,5 +1,5 @@
 # ========================================================
-# RAPID STREAMER - HYPER-STREAM INSTALLATION v6.0
+# HEISENBURG STREAMER - HYPER-STREAM INSTALLATION v6.0
 # ========================================================
 
 # 1. ELEVATION CHECK & SILENT UPGRADE
